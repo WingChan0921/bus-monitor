@@ -36,6 +36,7 @@
 <script>
 const MY_STOPS = { "dir1": "41C9CAACDC573B48", "dir2": "D412D24055680560" };
 const ROUTE_ORDER = ["68E", "68F", "268C", "968"];
+startAutoScroll(); 
 
 async function updateAll() {
     for (const [divId, stopId] of Object.entries(MY_STOPS)) {
@@ -89,6 +90,30 @@ async function fetchAndRender(stopId, divId) {
 
 updateAll();
 setInterval(updateAll, 25000);
+
+function startAutoScroll() {
+  let direction = 1; 
+  setInterval(() => {
+    let scrollHeight = document.documentElement.scrollHeight;
+    let clientHeight = document.documentElement.clientHeight;
+    let scrollTop = window.scrollY || document.documentElement.scrollTop;
+
+    if (scrollHeight <= clientHeight) return;
+
+    if (scrollTop + clientHeight >= scrollHeight - 2 && direction === 1) {
+      direction = 0; 
+      setTimeout(() => { direction = -1; }, 3000);
+    } 
+    else if (scrollTop <= 0 && direction === -1) {
+      direction = 0; 
+      setTimeout(() => { direction = 1; }, 3000);
+    }
+
+    if (direction !== 0) {
+      window.scrollBy(0, direction * 1); 
+    }
+  }, 40); 
+}
 </script>
 </body>
 </html>
