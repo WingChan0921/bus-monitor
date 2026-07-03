@@ -8,6 +8,14 @@
     body { background: black; font-family: 'Courier New', monospace; padding: 10px; margin: 0; color: white; user-select: none; }
     ::-webkit-scrollbar { display: none; }
     h2 { margin: 0 0 10px 0; font-size: 20px; text-align: center; }
+    .header-container { position: relative; margin-bottom: 10px; }
+    .control-btn { 
+        position: absolute; top: 0; right: 0; font-size: 12px; padding: 5px 10px; 
+        background: #333; color: white; border: none; border-radius: 4px; cursor: pointer;
+    }
+    .control-btn.active { background: #00ff00; color: black; }
+    .select-group { display: flex; gap: 5px; margin-top: 30px; }
+    select { flex: 1; background: #222; color: white; border: 1px solid #444; padding: 5px; border-radius: 4px; }
     .section { font-size: 18px; margin: 15px 0 8px 0; padding-bottom: 5px; border-bottom: 2px solid #333; font-weight: bold; }
     .outbound { color: #00ffcc; }
     .inbound { color: #ffd400; }
@@ -20,7 +28,6 @@
     .time { font-size: 28px; text-align: right; color: #00ff00; font-weight: bold; }
     .time.warn { color: #ffff00; }
     .time.arriving { color: #ff3333; animation: blink 1s infinite; }
-    /* 修正點：將未提供的字體大小設為 14px (約原先 28px 的一半) */
     .time.null { font-size: 14px; color: #666; text-align: right; padding-top: 5px; }
     @keyframes blink { 50% { opacity: 0.2; } }
     .status { margin-top: 20px; border-top: 1px solid #333; padding: 10px; color: #666; font-size: 12px; text-align: center; }
@@ -28,20 +35,57 @@
 </head>
 <body>
 
-<h2>🚌 蝶翠峰智慧到站裝置</h2>
+<div class="header-container">
+    <h2>🚌 智慧到站裝置</h2>
+    <button id="scrollBtn" class="control-btn active" onclick="toggleScroll()">自動捲動: 開</button>
+</div>
+
+<div class="select-group">
+    <select id="select1" onchange="saveAndRefresh()">
+        <option value="41C9CAACDC573B48">蝶翠峰 (外 - 錦上路方向)</option>
+        <option value="D412D24055680560">蝶翠峰 (回 - 元朗公園方向)</option>
+        <option value="723EF8D7809D3ADB">形點II (外 - 九龍方向)</option>
+        <option value="A7156FD2BD44D128">機場 (地面運輸中心)</option>
+    </select>
+    <select id="select2" onchange="saveAndRefresh()">
+        <option value="D412D24055680560">蝶翠峰 (回 - 元朗公園方向)</option>
+        <option value="41C9CAACDC573B48">蝶翠峰 (外 - 錦上路方向)</option>
+
+    </select>
+</div>
+
 <div id="dir1" class="outbound"></div>
 <div id="dir2" class="inbound"></div>
 <div id="statusBar" class="status">初始化系統...</div>
 
 <script>
-const MY_STOPS = { "dir1": "41C9CAACDC573B48", "dir2": "D412D24055680560" };
 const ROUTE_ORDER = ["68E", "68F", "268C", "968"];
+let isAutoScrolling = true;
 
+function toggleScroll() {
+    isAutoScrolling = !isAutoScrolling;
+    const btn = document.getElementById('scrollBtn');
+    btn.innerText = isAutoScrolling ? "自動捲動: 開" : "自動捲動: 關";
+    btn.className = isAutoScrolling ? "control-btn active" : "control-btn";
+}
+
+window.onload = () => {
+    if(localStorage.getItem('stop1')) document.getElementById('select1').value = localStorage.getItem('stop1');
+    if(localStorage.getItem('stop2')) document.getElementById('select2').value = localStorage.getItem('stop2');
+    updateAll();
+    setInterval(updateAll, 25000);
+    startAutoScroll();
+};
+
+function saveAndRefresh() {
+    localStorage.setItem('stop1', document.getElementById('select1').value);
+    localStorage.setItem('stop2', document.getElementById('select2').value);
+    updateAll();
+}
 
 async function updateAll() {
-    for (const [divId, stopId] of Object.entries(MY_STOPS)) {
-        await fetchAndRender(stopId, divId);
-    }
+    await fetchAndRender(document.getElementById('select1').value, "dir1");
+    await fetchAndRender(document.getElementById('select2').value, "dir2");
     document.getElementById("statusBar").innerText = `最後更新: ${new Date().toLocaleTimeString()}`;
 }
 
@@ -50,8 +94,7 @@ async function fetchAndRender(stopId, divId) {
     try {
         const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`);
         const result = await res.json();
-        
-        if (!result.data) return;
+        if (!result.data) { container.innerHTML = ""; return; }
 
         const grouped = result.data.reduce((acc, cur) => {
             if (!acc[cur.route]) acc[cur.route] = [];
@@ -60,27 +103,13 @@ async function fetchAndRender(stopId, divId) {
         }, {});
 
         let html = `<div class="section">${divId === 'dir1' ? '➡ 外出方向' : '⬅ 返回方向'}</div>`;
-        
-        Object.keys(grouped).sort((a, b) => {
-            let iA = ROUTE_ORDER.indexOf(a);
-            let iB = ROUTE_ORDER.indexOf(b);
-            if (iA === -1) iA = 99;
-            if (iB === -1) iB = 99;
-            return iA - iB;
-        }).forEach(route => {
+        Object.keys(grouped).sort((a, b) => (ROUTE_ORDER.indexOf(a) === -1 ? 99 : ROUTE_ORDER.indexOf(a)) - (ROUTE_ORDER.indexOf(b) === -1 ? 99 : ROUTE_ORDER.indexOf(b))).forEach(route => {
             html += `<div class="route-block"><div class="route-title">${route}</div>`;
-            
             const withEta = grouped[route].filter(b => b.eta).sort((a,b) => new Date(a.eta) - new Date(b.eta));
-            const noEta = grouped[route].filter(b => !b.eta);
-
             withEta.slice(0, 3).forEach(bus => {
                 const diff = Math.ceil((new Date(bus.eta) - new Date()) / 60000);
                 const cls = diff <= 4 ? "time arriving" : (diff <= 8 ? "time warn" : "time");
                 html += `<div class="bus-row"><div class="dest">${bus.dest_tc}<span class="rmk">${bus.rmk_tc || ''}</span></div><div class="${cls}">${diff <= 1 ? "即將" : diff + "<span style='font-size:14px;'>分</span>"}</div></div>`;
-            });
-
-            noEta.forEach(bus => {
-                html += `<div class="bus-row"><div class="dest">${bus.dest_tc}<span class="rmk">${bus.rmk_tc || ''}</span></div><div class="time null">未提供</div></div>`;
             });
             html += `</div>`;
         });
@@ -88,31 +117,23 @@ async function fetchAndRender(stopId, divId) {
     } catch (e) { console.error(e); }
 }
 
-updateAll();
-setInterval(updateAll, 25000);
-startAutoScroll(); 
 function startAutoScroll() {
-  let direction = 1; 
-  setInterval(() => {
-    let scrollHeight = document.documentElement.scrollHeight;
-    let clientHeight = document.documentElement.clientHeight;
-    let scrollTop = window.scrollY || document.documentElement.scrollTop;
+    let direction = 1; 
+    setInterval(() => {
+        if (!isAutoScrolling) return; // 如果被關閉，則不執行後續邏輯
 
-    if (scrollHeight <= clientHeight) return;
-
-    if (scrollTop + clientHeight >= scrollHeight - 2 && direction === 1) {
-      direction = 0; 
-      setTimeout(() => { direction = -1; }, 3000);
-    } 
-    else if (scrollTop <= 0 && direction === -1) {
-      direction = 0; 
-      setTimeout(() => { direction = 1; }, 3000);
-    }
-
-    if (direction !== 0) {
-      window.scrollBy(0, direction * 1); 
-    }
-  }, 40); 
+        let scrollHeight = document.documentElement.scrollHeight;
+        let clientHeight = document.documentElement.clientHeight;
+        let scrollTop = window.scrollY || document.documentElement.scrollTop;
+        if (scrollHeight <= clientHeight) return;
+        
+        if (scrollTop + clientHeight >= scrollHeight - 2 && direction === 1) {
+            direction = 0; setTimeout(() => { direction = -1; }, 3000);
+        } else if (scrollTop <= 0 && direction === -1) {
+            direction = 0; setTimeout(() => { direction = 1; }, 3000);
+        }
+        if (direction !== 0) window.scrollBy(0, direction * 1);
+    }, 40);
 }
 </script>
 </body>
